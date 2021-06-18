@@ -1,0 +1,260 @@
+---
+title: "Untitled"
+author: "Sounak Paul"
+date: "11/22/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+It has been suspected since the outbreak of SARS-CoV-2, that the bacillus Calmette–Guerin (BCG) vaccine might be providing some protection from the virus. The basis for this suspicion is primarily the observation that countries which had a national BCG vaccination policy seem to have lower number of cases and deaths per million people. The paper titled ”BCG vaccine protection from severe coronavirus disease 2019 (COVID-19)” by Escobar et al., which appeared in PNAS (https://doi.org/10.1073/pnas.2008410117) on October 12, 2020, claims that BCG policy and coverage indeed has a statistically significant effect on the number of deaths per million in a country.
+
+## Brief Discussion of Original Paper
+
+Previous studies have suggested a negative association between national BCG vaccination policy and the prevalence and mortality of COVID-19. However, these studies are difficult to validate due to broad differences between countries such as socioeconomic status, demographic structure, rural vs. urban setting, time of arrival of the pandemic, number of diagnostic tests/criteria for testing, and national control strategies to limit the spread of COVID-19. This paper tries to address this issue by refining the epidemiological analysis to mitigate the effects of potentially confounding factors like stage of the COVID-19 epidemic, human development index, population density, age structure, etc, but they use very primitive methods to do so. That being said, no clinical trials were conducted in this study, and even the authors believe that clinical trials are required to safely establish causality between BCG vaccination and protection from severe COVID-19.
+
+The main dataset associated with this paper is the dataset named ”Coarse”
+(https://www.pnas.org/content/suppl/2020/07/07/2008410117.DCSupplemental). It contains several variables, the most important ones being Country (Identifier variable), region (Categorical with 7 factors), population in 2018, population density of 2018, urban percentage in 2018 (percentage of population living in cities), percentage of population aged 65 or above, and COVID-19 deaths in each of the first 4 weeks per million. It also contains BCG vaccination information in each country, through the columns ”BCG Policy” (Categorical with 3 factors: current, interrupted and never), BCG vaccine start, end and year range, and BCG mean coverage. Using this, the authors mainly performed 2 analyses: a coarse analysis and a filtered/refined
+analysis (the tables and figures of which can be found in the appendix of the paper). The methods used for both these analyses were ANOVA, t-tests, and simple linear regression, which are crude at best. Even more questionable was the fact that a lot of linear regressions were done to test for strong associations between COVID-19 mortality and a large number of covariates, one by one. They found strong and consistent associations between HDI, percentage of population above 65, and urbanization, with COVID-19 mortality (Every 10 percent increase in the BCG index was associated with a 10.4 percent reduction in COVID-19 mortality). They also rejected the null hypothesis of no association between BCG vaccination and COVID-19 mortality. Issues of multiple testing that may arise due to so many testings, were completely ignored.
+
+Their filtered analysis employed the exact same methods, the only difference being that here the authors tried to control for confounding variables by picking out 22 socially similar countries. Here, they added a new covariate, a BCG index, i.e. a proxy for the degree of universal BCG vaccination deployment in a country. While the control of confounding variables reduced the overall significance of the association between BCG and COVID-19 deaths, nevertheless, a significant association and effect was still detected for several comparisons controlling for social conditions and stage of the epidemic by country. They also do follow-up analyses of socially similar countries in Europe, again in an attempt to reduce confounders. There are a lot of things of statistical interest that could have been addressed and explored, and much more sophisticated models using random effects and spatiotemporal kernels could have been deployed in the analysis, especially since the possibility of BCG vaccination having a protective effect against COVID-19 can have widespread ramifications.
+
+## My Setup
+
+In order to conduct a more sophisticated analysis by incorporating spatiotemporal correlations, I needed more data. Apart from the "Coarse" dataset available at the mentioned link, I used two more datasets: The first one contained country ISO3 codes along with their coordinates, i.e. latitude and longitude (https://gist.github.com/tadast/8827699), and the other was a time series dateset obtained from the Johns Hopkins Covid data repository on github, containing the cumulative number of deaths every day in each country, from 22nd January till 11th November (i.e. 299 days total). This is in stark contrast with the Coarse dataset, which used only the cumulative number of deaths after 2 weeks, and 4 weeks since the first death reported in each country. Using these 3 datsets, I created 3 new datesets that I used in my anlysis:
+
+$\bullet\ \textbf{cumdailydeaths}$: A dataset with 39550 observations of 19 columns, giving the cumulative daily deaths every day since the first day the pandemic hit each country (171 countries in total). This dataset was created by inner joining "Coarse" with the latitude and longitude dataset, and then with the JHU Covid set, after which some unnecessary covariates were removed. The observational units are $(\text{Country}, \text{Day})$, where Country and Day are block factors. 
+
+$\bullet\ \textbf{cumweeklydeaths}$: A dataset with 5573 observations of 15 columns, giving the cumulative weekly deaths every day since the first day the pandemic hit each country (170 countries in total). This was made by aggregating dataset `cumdailydeaths` into blocks of 7 days, excluding the last few leftover days. The country St. lucia was excluded in this dataset since it had been just 6 days since its first covid death. The observational units are $(\text{Country}, \text{Week})$, where Country and Week are block factors.
+
+$\bullet\ \textbf{countryinfo}$: A dataset with 171 observations of 14 columns, obtained by choosing the cumulative deaths in each each country on the final observed day. That gives us 171 observations corresponding to 171 countries.
+
+Note that which the "Coarse" dataset contained above 300 entries, most of them well filled with missing values (and also, many of them were not actual countries, so it was tough to find latitude and longitude information, and daily/weekly covid death information about them). Also, the authors had considered each state of US as a different country arguing that many states had higher population than several countries. I do not believe that is a good thing to do, since as of November, we have several massive countries like India and Brazil, which has huge populations and large number of deaths as well. So by the author's argument, we should break down these countries to their regions/states as well. But since finding the covid death records corresponding to every region would be extremely time-consuming, I included only countries in my datasets. The only countries missing from my dataset are those which have either recorded 0 deaths, or do not have reliable records of Covid deaths, or if it is unclear if BCG vaccine is administered in those countries. Even then, there were several missing values, especially in the column "range_age_BCG". Since we are mainly going to work with the dataset `cumweeklydeaths`, I shall provide a brief overview of its columns:
+
+$\bullet\ $Country: Column of factors, containing 171 levels, i.e. countries that have completed at least 1 week since theire first recorded covid death.
+
+$\bullet\ $Week: Column recording number of weeks corresponding to every country, containing 171 levels, i.e. countries that have completed at least 1 week since their first recorded covid death. The highest number of weeks corresponding to a single country is 36 (will be regarded as both a factor as well as a continuous covariate).
+
+$\bullet\ $ISO3: Unique 3 digit identifier of every country (Factor variable again).
+
+$\bullet\ $population_million: Population of the corresponding country, in millions (Continuous covariate).
+
+$\bullet\ $HDI_2018: Human Development Index of corresponding country in 2018. Values are between 0 and 1.
+
+$\bullet\ $log_pop_density: Natural Logarithm of the population density of corresponding country. Log transformation was taken because this was a positive covariate, and the highest value was several orders of magnitude larger than the lowest. The original paper did not take this transformation.
+
+$\bullet\ $ages_65_up: Fraction of population above 65. I divided the values of the Coarse dataset by 100, to get values between 0 and 1, to ensure that this covariate was around the same order as the response. A few missing values present.
+
+$\bullet\ $BCG_policy: Factor variable with 3 levels: Current (for countries with ongoing universal BCG vaccination policy), Interrupted (for countries which previously had universal BCG vaccination policy, but was later abandoned).
+
+$\bullet\ $range_age_BCG: The range of years where BCG vaccine was administered in the country. Has very high number of missing values.
+
+$\bullet\ $BCG_mean_coverage: The average of estimated fraction of infants that were administered the vaccine, across years. Again, I standardized this value to be between 0 and 1. Few missing values present.
+
+$\bullet\ $urban_fraction: Fraction of population living in cities (again divided the values of the Coarse dataset by 100).
+
+$\bullet\ $lat: Latitude value of the corresponding country.
+
+$\bullet\ $long: Longitude value of the corresponding country.
+
+$\bullet\ $Deaths: Cumulative number of deaths in a $(\text{Country}, \text{Week})$ pair.
+
+$\bullet\ $log_deaths_million: The logarithm of deaths per million population in a country. The log transformation was also taken in the original paper, and I have tried to justify it using the Box-Cox transformation (later on).
+
+$\bullet\ $BCG_index: A self defined measure of the BCG penetration in the country. The original paper also had its own definition of a BCG index, but I disagreed with it, and defined,
+
+$$BCG\_index = range\_age\_BC \times BCG\_mean\_coverage$$
+
+We now move on to our preliminary analysis, before fitting our models.
+
+# Preliminary Analysis
+## Imputation of missing values
+
+(Code and output in Subsection 1 of Appendix)
+
+I searched the internet and tried to fill up missing values as much as possible, but some values were tough to find, especially regarding `ages_65_up` and `range_age_BCG`, and a few values of `BCG_mean_coverage`. For `range_age_BCG`, I set the values for countries with never had a BCG vaccination programme, to 0. For the rest, I imputed using the mean of the observed ranges of other countries, i.e. 47.8 years. I believe that this imputation does make sense, since most of the countries which have had a BCG vaccination programme at some point, have ranges well over a few decades. Since this will get multiplied with the mean BCG coverage over the years, to give the treatment, i.e. `BCG_index`, hence we do not need to worry too much in my opinion.
+
+For `ages_65_up`, I imputed the missing values using the values predicted by logistic regression of `ages_65_up` on the covariates `HDI_2018`, `log_pop_density`, and `urban_fraction`. Finally, for `BCG_mean_coverage`, I imputed the missing values again using the values predicted by logistic regression of `ages_65_up` on the covariates `ages_65_up`, `HDI_2018`, `log_pop_density`, and `urban_fraction`.
+
+
+## Transformation of Response
+
+(Code and output in Subsection 2 of Appendix)
+
+Since the range of death per million is very huge, taking a log transformation was always an option. I used the `boxcox` function to find an optimal Box-Cox power transformation, and found that while 0 was not included in the $95\%$ CI, the whole confidence interval lied between 0 and 0.1, which are extremely small values. Thus I believe that taking a log transformation would not be unreasonable. Also, I suspect that the effects of many of the covariates on deaths per million, could be multiplicative instead of additive, hence I proceeded with the log transformation to obtain the response variable `log_deaths_million`.  
+
+## t-test
+
+(Code and output in Subsection 3 of Appendix)
+
+Here, I conducted a very rudimentary test, i.e. the unpaired t-test. I took a subset of countries from the entire dataset for whom, at least 228 days had elapsed since the first death. The number 228 was chosen since it was the first quartile of all 171 countries. This created a new dataset `ttestdata`, which had 130 countries, their BCG policy, and the cumulative number of deaths on Day 228 since their first covid death.
+
+Then, I ran a unpaired t-test with 2 samples, one with log deaths per million of countries that have never had a BCG vaccination policy, and the other with that of the rest. The results I obtained were as follows:
+
+```{r, echo=FALSE}
+paste0("t       ", "  2.0594")
+paste0("df      ", "  10.376")
+paste0("p-value ", "  0.06544")
+```
+
+The $95\%$ confidence interval for the difference in log deaths per million, of the 2 samples, is $(-0.094,\ 2.963)$. This shows that the difference is not statistically significant at the $0.05$ level, though it is still pretty close.
+
+Of course, this test does not take into account the BCG penetration in the countries, since neither the range of years of BCG administration, nor the mean coverage is used. Also, the t-test assumes independence of all the points in both samples, however, in this case, the countries are spatially correlated. It is thus clear that spatiotemporal models are necessary to obtain more reliable results.
+
+# Fitted models
+## Without Temporal Component
+
+(Code and output in Subsection 4 of Appendix)
+
+In the previous section, since we had already created the dataset `ttestdata`, I think it would be worth fitting a model with the fixed effects plus only the spatial correlation. The model I explored, (denoting the response `log_deaths_million` as $Y$) was
+
+$$Y_c\ =\ \beta_0\ +\ \beta_1 HDI_c\ +\ \beta_2 log\_pop\_density_c\ +\ \beta_3 ages\_65\_up_c$$
+$$\ \ \ \ \ +\ \beta_4 BCG\_index_c\ +\ \beta_5 urban\_fraction_c\ +\ \epsilon\ +\ Z_c$$
+where $c$ denotes Country, $\epsilon_c\sim N(0,\sigma_0^2)$ is random noise irrespective of country, and 
+$$Z\sim N(0, \sigma_1^2\Sigma),\ where\ \Sigma[i,j]=\exp(-\frac{\rho\|x_i-x_j\|}{12756274})$$
+is the exponential spatial covariance matrix. Here $\|.\|$ is the Haversine distance, i.e. the great-circle distance in kilometres between any 2 points on the earth, $x_i$ is a longitude latitude tuple of the $i$th country, and $\rho$ is a constant for scaling. Note that 12756274 is the diameter of the earth (and the maximum possible distance between 2 points).
+
+The optimum value $\rho$ is found by plotting the log likelihood of the above model fitted without `BCG_index`, with the values of $\rho$ going from $0.05$ to $5$ with an increment on $0.05$. Apart from the values very close to 0, we see that the likelihood function stays at the maximum uniformly. Thus, we pick $\rho = 1$ as an optimum value.
+
+Now we fit the model without and with the treatment `BCG_index`, taking the kernel to be the the subspace spanned by the fixed effects of the former model. The likelihood ratio chi square statistic of this model with its reduced one, turns out to be 5.780 on 1 degree of freedom, which gives the corresponding p-value as 0.016. Thus, from this analysis we get that the effect of `BCG_index` is statistically significant. The other parameter estimates along with their standard errors are
+
+$$\begin{tabular}{|c || c | c|} 
+ \hline
+ Parameter & Estimate & Std.Error \\ [0.5ex] 
+ \hline\hline
+ $\beta_0$ & 4.746 & 2.241 \\ 
+ \hline
+ $\beta_1$ & 0.021 & 1.410 \\
+ \hline
+ $\beta_2$ & -0.085 & 0.086 \\
+ \hline
+ $\beta_3$ & -6.984 & 3.389 \\
+ \hline
+ $\beta_4$ & -0.018 & 0.007 \\
+ \hline
+ $\beta_5$ & 1.465 & 0.791 \\ 
+ \hline
+ $\sigma_0^2$ & 0.626 & 0.165 \\
+ \hline
+ $\sigma_1^2$ & 8.060 & 2.441 \\[1ex] 
+ \hline
+\end{tabular}$$
+
+The mean of the logarithm of deaths per million decreases by 0.018 with a standard error of 0.007, for every increase in BCG Index by 1.
+
+## Exponential Spatial, and Brownian Motion Temporal Covariance
+
+Now, we shall fit 2 models on the `cumweeklydeaths` dataset, both using spatiotemporal kernels.
+
+### Spatiotemporal Model 1
+
+(Code and output in Subsection 5 of Appendix)
+
+$$Y_{ct}\ =\ \beta_0\ +\ \beta_1 t \ +\ \beta_2 HDI_c\ +\ \beta_3 log\_pop\_density_c\ +\ \beta_4 BCG\_index_c\ $$
+$$\ \ \ \ \ \ \ +\ \beta_5 ages\_65\_up_c\ +\ \beta_6 urban\_fraction_c\ +\ \epsilon\ +\ Z_{ct}\ ,$$
+where $c$ and $t$ refer to country and time (in weeks), $\epsilon_c\sim N(0,\sigma_0^2)$ is random noise irrespective of time and country effect, and 
+$$Z\sim N(0, \sigma_1^2\Sigma),\ where\ \ \Sigma[i(c_1,t_1),\ j(c_2,t_2)]= (t_1\wedge t_2)\exp\left(-\frac{\|x_{c_1}-x_{c_2}\|}{12756274}\right)$$
+is the hadamard product of a brownian motion covariance matrix with an exponential spatial covariance matrix. $\|.\|$ is the Haversine distance as before, and I have not introduced $\rho$ since this this model takes hours to run just once. $i$ and $j$ are row and column indices of $\Sigma$ corresponding to country $c_1$ at time $t_1$, and country $c_2$ at time $t_2$ respectively.
+
+As before, we fit the model without and with the treatment `BCG_index`, taking the kernel to be the the subspace spanned by the fixed effects of the former model. The likelihood ratio chi square statistic of this model with its reduced one, turns out to be 21.54 on 1 degree of freedom, which gives us a statistically very significant p-value of $3.450\times 10^{-6}$. The other parameter estimates along with their standard errors are:
+
+$$\begin{tabular}{|c || c | c|} 
+ \hline
+ Parameter & Estimate & Std.Error \\ [0.5ex] 
+ \hline\hline
+ $\beta_0$ & -3.230 & 1.090 \\ 
+ \hline
+ $\beta_1$ & 0.144 & 0.144 \\
+ \hline
+ $\beta_2$ & 2.188 & 0.586 \\
+ \hline
+ $\beta_3$ & 0.208 & 0.085 \\
+ \hline
+ $\beta_4$ & -0.016 & 0.003 \\
+ \hline
+ $\beta_5$ & -8.067 & 1.948 \\ 
+ \hline
+ $\beta_6$ & 0.494 & 0.360 \\ 
+ \hline
+ $\sigma_0^2$ & 0.103 & 0.007 \\
+ \hline
+ $\sigma_1^2$ & 1.511 & 0.105 \\[1ex] 
+ \hline
+\end{tabular}$$
+
+The mean of the logarithm of deaths per million decreases by 0.016 with a standard error of 0.003, for every increase in BCG Index by 1. From this analysis also, we get that the effect of `BCG_index` is statistically significant.
+
+### Spatiotemporal Model 2
+
+Our final model is the one I feel makes the most sense intuitively. The only difference from the previous model is that this model has 2 more variance components. Hence I will not give detailed explanation of the meaning of all the terms since they are the same as before.
+
+$$Y_{ct}\ =\ \beta_0\ +\ \beta_1 t \ +\ \beta_2 HDI_c\ +\ \beta_3 log\_pop\_density_c\ +\ \beta_4 BCG\_index_c\ $$
+$$\ \ \ \ \ \ \ +\ \beta_5 ages\_65\_up_c\ +\ \beta_6 urban\_fraction_c\ +\ \epsilon\ +\ S_c\ +\ T_t +\ Z_{ct}\ ,$$
+where $\epsilon_c\sim N(0,\sigma_0^2)$ is random noise irrespective of time and country effect, 
+$$S\sim N(0, \sigma_1^2\Sigma_{space}),\ where\ \ \Sigma_{space}[i(c_1,t_1),\ j(c_2,t_2)] = \exp\left(-\frac{\|x_{c_1}-x_{c_2}\|}{12756274}\right)\ ,$$
+$$T\sim N(0, \sigma_2^2\Sigma_{time}),\ where\ \ \Sigma_{time}[i(c_1,t_1),\ j(c_2,t_2)] = t_1\wedge t_2\ ,$$
+$$Z\sim N(0, \sigma_3^2\Sigma_{st}),\ where\ \ \Sigma_{st}[i(c_1,t_1),\ j(c_2,t_2)] = (t_1\wedge t_2)\exp\left(-\frac{\|x_{c_1}-x_{c_2}\|}{12756274}\right)\ .$$
+Note that $\Sigma_{st}$ is simply the hadamard product of $\Sigma_{space}$ and $\Sigma_{time}$. I believe this model intuitively makes the most sense as $\sigma_1$ can be thought of as a volatility coefficient that is common for all weeks, $\sigma_2$ is common for all countries, hence their inclusion should be vital.
+
+Unfortunately, despite running the code for more than a day, I could not get an answer. Since the program took so long to run, I decided to choose a subset of countries to get a very rough idea. I kept all the countries which never had, or have currently stopped, their BCG vaccination programs, and then picked 10 countries with ongoing programs, at random.
+
+Running the program on this smaller subset, I got that the likelihood ratio chi square statistic of this model with its reduced one, turns out to be just 0.499 with 1 degree of freedom. That gives us a very insignificant p-value of 0.480. The other parameter estimates along with their standard errors are:
+
+$$\begin{tabular}{|c || c | c|} 
+ \hline
+ Parameter & Estimate & Std.Error \\ [0.5ex] 
+ \hline\hline
+ $\beta_0$ & -1.825 & 9.221 \\ 
+ \hline
+ $\beta_1$ & 0.155 & 0.031 \\
+ \hline
+ $\beta_2$ & 1.196 & 3.608 \\
+ \hline
+ $\beta_3$ & 1.080 & 0.610 \\
+ \hline
+ $\beta_4$ & 0.002 & 0.021 \\
+ \hline
+ $\beta_5$ & -23.201 & 12.760 \\ 
+ \hline
+ $\beta_6$ & -2.998 & 2.207 \\ 
+ \hline
+ $\sigma_0^2$ & -0.001 & 0.001 \\
+ \hline
+ $\sigma_1^2$ & 132.164 & 0.000 \\
+ \hline
+ $\sigma_2^2$ & -0.779 & 0.038 \\
+ \hline
+ $\sigma_3^2$ & 1.605 & 0.074 \\[1ex] 
+ \hline
+\end{tabular}$$
+
+While this model is the most intuitive, I believe that choosing such a small subset of countries was not a good idea. Some takeaways are:
+
+2. Unlike the previous model (Model 1), here the fixed effect coefficient of Week seems significant, indicating that our model has indeed captured a significant trend in the number of deaths per million with time (which is expected). This was not true in the previous models.
+
+3. All the variance components look significant, so their inclusion is recommended.
+
+
+On the flip side, the results show some problems as well:
+
+1. The estimate of $\sigma_1^2$ is huge, and has negligible standard error.
+
+2. The fixed effect estimate of the coefficient of `BCG_index` has come out to be positive. Even though it is not significant, it should still raise some concern.
+
+3. All the fixed effects coefficient estimates have changed drastically, and none of them, apart from Week, are significant now.
+
+To conclude, I believe that points 1 and 3 indicate that choosing so few spatial points makes the analysis unreliable. For now, I shall go along with the results of Model 1.
+
+# Final Thoughts
+
+We conclude from our Spatiotemporal Model 1, that the effect of BCG index on the logarithm of deaths per million is indeed significant. That being said, there are some issues to keep in mind.
+
+1. Clinical trials are what should generally be used to make inferences about individuals, but in this case, we are using countries as our observational units. This could be a case of ecological fallacy. 
+
+2. With the very limited amount of computing resources at my disposal, I could not properly fit my second spatiotemporal model. I also could not make use of the dataset `cumdailydeaths` (which had daily covid death records for each country), because of the massive size of the dataset. I will try to use parallel computing methods to make the programs run faster.
+
+3. For my final report, I will try to check the fit as well using conditional expectations, and include exploratory plots as well.
